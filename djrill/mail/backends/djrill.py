@@ -17,27 +17,26 @@ class DjrillBackend(BaseEmailBackend):
         Set the API key, API url and set the action url.
         """
         super(DjrillBackend, self).__init__(**kwargs)
-        self.api_key = getattr(settings, "MANDRILL_API_KEY", None)
-        self.api_url = getattr(settings, "MANDRILL_API_URL", None)
+        self.api_key = getattr(settings, 'MANDRILL_API_KEY', None)
+        self.api_url = getattr(settings, 'MANDRILL_API_URL', None)
+        self.default_from_name = getattr(settings, 'MANDRILL_DEFAULT_FROM_NAME', None)
         self.connection = None
 
         if not self.api_key:
-            raise ImproperlyConfigured("You have not set your mandrill api key "
-                "in the settings.py file.")
+            raise ImproperlyConfigured('You have not set your mandrill api key '
+                                       'in the settings.py file.')
         if not self.api_url:
-            raise ImproperlyConfigured("You have not added the Mandrill api "
-                "url to your settings.py")
+            raise ImproperlyConfigured('You have not added the Mandrill api '
+                                       'url to your settings.py')
 
-        self.api_action = self.api_url + "/messages/send.json"
-        self.api_verify = self.api_url + "/users/ping.json"
+        self.api_action = self.api_url + '/messages/send.json'
+        self.api_verify = self.api_url + '/users/ping.json'
 
     def open(self, sender):
-        """
-        """
         self.connection = None
 
-        valid_sender = requests.post(
-            self.api_verify, data={"key": self.api_key})
+        valid_sender = requests.post(self.api_verify,
+                                     data={'key': self.api_key})
 
         if valid_sender.status_code == 200:
                 self.connection = True
@@ -69,27 +68,26 @@ class DjrillBackend(BaseEmailBackend):
 
         self.sender = sanitize_address(message.from_email, message.encoding)
         recipients_list = [sanitize_address(addr, message.encoding)
-            for addr in message.recipients()]
+                           for addr in message.recipients()]
         from email.utils import parseaddr
-        self.recipients = [{"email": e, "name": n} for n,e in [
-            parseaddr(r) for r in recipients_list]]
+        self.recipients = [{'email': e, 'name': n} for n, e in [parseaddr(r) for r in recipients_list]]
 
         self.msg_dict = self._build_standard_message_dict(message)
 
-        if getattr(message, "alternative_subtype", None):
-            if message.alternative_subtype == "mandrill":
+        if getattr(message, 'alternative_subtype', None):
+            if message.alternative_subtype == 'mandrill':
                 self._build_advanced_message_dict(message)
                 if message.alternatives:
                     self._add_alternatives(message)
 
         djrill_it = requests.post(self.api_action, data=json.dumps({
-            "key": self.api_key,
-            "message": self.msg_dict
+            'key': self.api_key,
+            'message': self.msg_dict
         }))
 
         if djrill_it.status_code != 200:
             if not self.fail_silently:
-                raise
+                raise Exception(djrill_it.json()['message'])
             return False
         return True
 
@@ -101,12 +99,17 @@ class DjrillBackend(BaseEmailBackend):
         use by default. Standard text email messages sent through Django will
         still work through Mandrill.
         """
-        return {
+        result = {
             "text": message.body,
             "subject": message.subject,
             "from_email": self.sender,
             "to": self.recipients
         }
+
+        if self.default_from_name:
+            result['from_name'] = self.default_from_name
+
+        return result
 
     def _build_advanced_message_dict(self, message):
         """
